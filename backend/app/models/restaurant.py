@@ -44,6 +44,7 @@ class Restaurant(Base):
     special_features = relationship(
         "SpecialFeature", secondary=restaurant_feature_association, back_populates="restaurants"
     )
+    reviews = relationship("Review", back_populates="restaurant", cascade="all, delete-orphan")
 
 class CuisineType(Base):
     __tablename__ = "cuisine_types"
