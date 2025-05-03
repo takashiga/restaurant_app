@@ -35,7 +35,7 @@ const Header: React.FC = () => {
       <Toolbar>
         <RestaurantIcon sx={{ mr: 2 }} />
         <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
-          日本のレストラン情報
+          グルメコンパス
         </Typography>
         <Box>
           <Button color="inherit" component={RouterLink} to="/">
