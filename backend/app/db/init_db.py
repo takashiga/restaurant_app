@@ -1,10 +1,28 @@
+import logging
+from sqlalchemy import inspect
 from sqlalchemy.orm import Session
 from app.db.database import Base, engine
 from app.models.restaurant import CuisineType, SpecialFeature
 from app.models.user import User
+from app.db.migrations import run_migrations
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 def init_db():
-    Base.metadata.create_all(bind=engine)
+    """Initialize the database."""
+    logger.info("Creating database tables...")
+    
+    inspector = inspect(engine)
+    existing_tables = inspector.get_table_names()
+    
+    if "restaurants" not in existing_tables:
+        logger.info("Creating initial tables...")
+        Base.metadata.create_all(bind=engine)
+    
+    run_migrations()
+    
+    logger.info("Database initialization completed")
 
 def seed_initial_data(db: Session):
     cuisine_types = [
