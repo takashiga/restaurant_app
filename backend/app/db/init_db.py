@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 from app.db.database import Base, engine
 from app.models.restaurant import CuisineType, SpecialFeature
+from app.models.user import User
 
 def init_db():
     Base.metadata.create_all(bind=engine)
