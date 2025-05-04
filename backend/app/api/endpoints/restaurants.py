@@ -1,19 +1,26 @@
-from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from typing import List, Optional, Any, Dict
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Path
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_, or_, Integer
 import math
+import logging
+import traceback
 
 from app.db.database import get_db
 from app.models.restaurant import Restaurant as RestaurantModel, CuisineType, SpecialFeature
 from app.models.restaurant import restaurant_cuisine_association, restaurant_feature_association
 from app.schemas.restaurant import Restaurant, RestaurantCreate, RestaurantUpdate, RestaurantSearch, CuisineType as CuisineTypeSchema, SpecialFeature as SpecialFeatureSchema
+from app.services.cache import cache_response
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
 @router.get("/search/", response_model=List[Restaurant])
+@cache_response(key_prefix="restaurant_search", expiration_seconds=1800)  # 30 minutes
 async def search_restaurants(
-    q: str = Query(..., description="Search keyword"),
+    request: Request,
+    q: str = "",
     db: Session = Depends(get_db),
     skip: int = 0,
     limit: int = 20,
@@ -42,12 +49,14 @@ async def search_restaurants(
     return restaurants
 
 @router.get("/nearby/", response_model=List[Restaurant])
+@cache_response(key_prefix="restaurant_nearby", expiration_seconds=900)  # 15 minutes
 async def get_nearby_restaurants(
-    latitude: float = Query(..., description="Latitude"),
-    longitude: float = Query(..., description="Longitude"),
-    radius: float = Query(2.0, description="Search radius in kilometers"),
+    request: Request,
+    latitude: float = Query(..., description="Latitude of the center point"),
+    longitude: float = Query(..., description="Longitude of the center point"),
+    radius: float = Query(2.0, ge=0.1, le=50.0, description="Search radius in kilometers"),
     db: Session = Depends(get_db),
-    limit: int = 20,
+    limit: int = Query(20, ge=1, le=100, description="Maximum number of results to return"),
 ):
     """
     Get restaurants near a specific location.
@@ -56,111 +65,18 @@ async def get_nearby_restaurants(
     - **longitude**: Longitude of the center point
     - **radius**: Search radius in kilometers (default: 2)
     """
-    query = db.query(RestaurantModel)
+    logger.info(f"Request URL: {request.url}")
+    logger.info(f"Request query params: {request.query_params}")
+    logger.info(f"Raw request parameters: latitude={latitude}, longitude={longitude}, radius={radius}, limit={limit}")
     
-    query = query.filter(
-        RestaurantModel.latitude.isnot(None),
-        RestaurantModel.longitude.isnot(None)
-    )
-    
-    earth_radius = 6371  # Earth radius in kilometers
-    
-    lat1 = func.radians(latitude)
-    lon1 = func.radians(longitude)
-    lat2 = func.radians(RestaurantModel.latitude)
-    lon2 = func.radians(RestaurantModel.longitude)
-    
-    dlon = lon2 - lon1
-    dlat = lat2 - lat1
-    a = func.pow(func.sin(dlat / 2), 2) + func.cos(lat1) * func.cos(lat2) * func.pow(func.sin(dlon / 2), 2)
-    c = 2 * func.asin(func.sqrt(a))
-    distance = earth_radius * c
-    
-    query = query.filter(distance <= radius).order_by(distance)
-    
-    restaurants = query.limit(limit).all()
-    
-    return restaurants
-
-@router.get("/cuisine-types/", response_model=List[CuisineTypeSchema])
-async def get_cuisine_types(db: Session = Depends(get_db)):
-    """
-    Get all cuisine types.
-    """
-    cuisine_types = db.query(CuisineType).all()
-    return cuisine_types
-
-@router.get("/special-features/", response_model=List[SpecialFeatureSchema])
-async def get_special_features(db: Session = Depends(get_db)):
-    """
-    Get all special features.
-    """
-    special_features = db.query(SpecialFeature).all()
-    return special_features
-
-@router.get("/", response_model=List[Restaurant])
-async def get_restaurants(
-    db: Session = Depends(get_db),
-    skip: int = 0,
-    limit: int = 20,
-    name: Optional[str] = None,
-    cuisine_type: Optional[str] = None,
-    area: Optional[str] = None,
-    min_price: Optional[int] = None,
-    max_price: Optional[int] = None,
-    special_feature: Optional[str] = None,
-    latitude: Optional[float] = None,
-    longitude: Optional[float] = None,
-    radius: Optional[float] = None,
-):
-    """
-    Get a list of restaurants with optional filtering.
-    
-    - **name**: Filter by restaurant name
-    - **cuisine_type**: Filter by cuisine type
-    - **area**: Filter by area/location
-    - **min_price**: Minimum price for dinner
-    - **max_price**: Maximum price for dinner
-    - **special_feature**: Filter by special feature
-    - **latitude**: Latitude for location-based search
-    - **longitude**: Longitude for location-based search
-    - **radius**: Search radius in kilometers
-    """
-    query = db.query(RestaurantModel).distinct()
-    
-    if name:
-        query = query.filter(RestaurantModel.restaurant_name.ilike(f"%{name}%"))
-    
-    if cuisine_type:
-        cuisine_subquery = db.query(restaurant_cuisine_association.c.restaurant_id).join(
-            CuisineType, 
-            CuisineType.id == restaurant_cuisine_association.c.cuisine_type_id
-        ).filter(
-            CuisineType.name.ilike(f"%{cuisine_type}%")
-        ).subquery()
+    try:
+        query = db.query(RestaurantModel)
         
-        query = query.filter(RestaurantModel.id.in_(cuisine_subquery))
-    
-    if area:
-        query = query.filter(RestaurantModel.address.ilike(f"%{area}%"))
-    
-    if min_price:
-        query = query.filter(RestaurantModel.price_range_dinner.like(f"%{min_price}%"))
-    
-    if max_price:
-        query = query.filter(RestaurantModel.price_range_dinner.like(f"%{max_price}%"))
-    
-    if special_feature:
-        feature_subquery = db.query(restaurant_feature_association.c.restaurant_id).join(
-            SpecialFeature, 
-            SpecialFeature.id == restaurant_feature_association.c.special_feature_id
-        ).filter(
-            SpecialFeature.name.ilike(f"%{special_feature}%")
-        ).subquery()
+        query = query.filter(
+            RestaurantModel.latitude.isnot(None),
+            RestaurantModel.longitude.isnot(None)
+        )
         
-        query = query.filter(RestaurantModel.id.in_(feature_subquery))
-    
-    if latitude and longitude and radius:
         earth_radius = 6371  # Earth radius in kilometers
         
         lat1 = func.radians(latitude)
@@ -174,25 +90,213 @@ async def get_restaurants(
         c = 2 * func.asin(func.sqrt(a))
         distance = earth_radius * c
         
-        query = query.filter(distance <= radius)
+        query = query.filter(distance <= radius).order_by(distance)
+        
+        restaurants = query.limit(limit).all()
+        
+        logger.info(f"Found {len(restaurants)} nearby restaurants within {radius}km of ({latitude}, {longitude})")
+        
+        return restaurants
+    except Exception as e:
+        logger.error(f"Error fetching nearby restaurants: {str(e)}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        return []
+
+@router.get("/cuisine-types/", response_model=List[CuisineTypeSchema])
+@cache_response(key_prefix="cuisine_types", expiration_seconds=86400)  # 24 hours
+async def get_cuisine_types(
+    request: Request,
+    db: Session = Depends(get_db), 
+    skip: int = Query(0, ge=0), 
+    limit: int = Query(100, ge=1, le=1000)
+):
+    """
+    Get all cuisine types.
     
-    # Ensure we only return distinct restaurants
-    query = query.distinct()
+    - **skip**: Number of records to skip (for pagination)
+    - **limit**: Maximum number of records to return
+    """
+    logger.info(f"Request URL: {request.url}")
+    logger.info(f"Request query params: {request.query_params}")
+    logger.info(f"Raw request parameters for cuisine types: skip={skip}, limit={limit}")
+    logger.info(f"Fetching all cuisine types with offset={skip}, limit={limit}")
+    try:
+        cuisine_types = db.query(CuisineType).offset(skip).limit(limit).all()
+        logger.info(f"Found {len(cuisine_types)} cuisine types")
+        
+        if cuisine_types:
+            sample = cuisine_types[:3]
+            logger.info(f"Sample cuisine types: {[{'id': c.id, 'name': c.name} for c in sample]}")
+        
+        return cuisine_types
+    except Exception as e:
+        logger.error(f"Error fetching cuisine types: {str(e)}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        return []
+
+@router.get("/special-features/", response_model=List[SpecialFeatureSchema])
+@cache_response(key_prefix="special_features", expiration_seconds=86400)  # 24 hours
+async def get_special_features(
+    request: Request,
+    db: Session = Depends(get_db), 
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000)
+):
+    """
+    Get all special features.
     
-    total = query.count()
-    restaurants = query.offset(skip).limit(limit).all()
+    - **skip**: Number of records to skip (for pagination)
+    - **limit**: Maximum number of records to return
+    """
+    logger.info(f"Request URL: {request.url}")
+    logger.info(f"Request query params: {request.query_params}")
+    logger.info(f"Raw request parameters for special features: skip={skip}, limit={limit}")
+    logger.info(f"Parameter types: skip={type(skip)}, limit={type(limit)}")
+    logger.info(f"Fetching all special features with offset={skip}, limit={limit}")
+    try:
+        special_features = db.query(SpecialFeature).offset(skip).limit(limit).all()
+        logger.info(f"Found {len(special_features)} special features")
+        
+        if special_features:
+            sample = special_features[:3]
+            logger.info(f"Sample special features: {[{'id': f.id, 'name': f.name} for f in sample]}")
+        
+        return special_features
+    except Exception as e:
+        logger.error(f"Error fetching special features: {str(e)}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        return []
+
+@router.get("/", response_model=List[Restaurant])
+@cache_response(key_prefix="restaurant_list", expiration_seconds=3600)  # 1 hour
+async def get_restaurants(
+    request: Request,
+    db: Session = Depends(get_db),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(20, ge=1, le=100),
+    name: str = Query("", min_length=0),
+    cuisine_type: str = Query("", min_length=0),
+    area: str = Query("", min_length=0),
+    min_price: int = Query(0, ge=0),
+    max_price: int = Query(0, ge=0),
+    special_feature: str = Query("", min_length=0),
+    latitude: float = Query(0.0),
+    longitude: float = Query(0.0),
+    radius: float = Query(0.0, ge=0.0),
+):
+    """
+    Get a list of restaurants with optional filtering.
     
-    return restaurants
+    All parameters are optional with sensible defaults.
+    """
+    logger.info(f"Request URL: {request.url}")
+    logger.info(f"Request query params: {request.query_params}")
+    logger.info(f"Parameter types: skip={type(skip)}, limit={type(limit)}, name={type(name)}, cuisine_type={type(cuisine_type)}, area={type(area)}, min_price={type(min_price)}, max_price={type(max_price)}, special_feature={type(special_feature)}, latitude={type(latitude)}, longitude={type(longitude)}, radius={type(radius)}")
+    logger.info(f"Raw request parameters: skip={skip}, limit={limit}, name={name}, cuisine_type={cuisine_type}, area={area}, min_price={min_price}, max_price={max_price}, special_feature={special_feature}, latitude={latitude}, longitude={longitude}, radius={radius}")
+    
+    try:
+        name = None if name == "" else name
+        cuisine_type = None if cuisine_type == "" else cuisine_type
+        area = None if area == "" else area
+        special_feature = None if special_feature == "" else special_feature
+        
+        logger.info(f"Get restaurants params: name={name}, cuisine_type={cuisine_type}, area={area}, special_feature={special_feature}")
+        
+        query = db.query(RestaurantModel).distinct()
+        
+        if name:
+            query = query.filter(RestaurantModel.restaurant_name.ilike(f"%{name}%"))
+        
+        if cuisine_type:
+            cuisine_subquery = db.query(restaurant_cuisine_association.c.restaurant_id).join(
+                CuisineType, 
+                CuisineType.id == restaurant_cuisine_association.c.cuisine_type_id
+            ).filter(
+                CuisineType.name.ilike(f"%{cuisine_type}%")
+            ).subquery()
+            
+            query = query.filter(RestaurantModel.id.in_(cuisine_subquery))
+        
+        if area:
+            query = query.filter(RestaurantModel.address.ilike(f"%{area}%"))
+        
+        if min_price:
+            query = query.filter(RestaurantModel.price_range_dinner.like(f"%{min_price}%"))
+        
+        if max_price:
+            query = query.filter(RestaurantModel.price_range_dinner.like(f"%{max_price}%"))
+        
+        if special_feature:
+            feature_subquery = db.query(restaurant_feature_association.c.restaurant_id).join(
+                SpecialFeature, 
+                SpecialFeature.id == restaurant_feature_association.c.special_feature_id
+            ).filter(
+                SpecialFeature.name.ilike(f"%{special_feature}%")
+            ).subquery()
+            
+            query = query.filter(RestaurantModel.id.in_(feature_subquery))
+        
+        if latitude != 0.0 and longitude != 0.0 and radius != 0.0:
+            earth_radius = 6371  # Earth radius in kilometers
+            
+            lat1 = func.radians(latitude)
+            lon1 = func.radians(longitude)
+            lat2 = func.radians(RestaurantModel.latitude)
+            lon2 = func.radians(RestaurantModel.longitude)
+            
+            dlon = lon2 - lon1
+            dlat = lat2 - lat1
+            a = func.pow(func.sin(dlat / 2), 2) + func.cos(lat1) * func.cos(lat2) * func.pow(func.sin(dlon / 2), 2)
+            c = 2 * func.asin(func.sqrt(a))
+            distance = earth_radius * c
+            
+            query = query.filter(distance <= radius)
+        
+        # Ensure we only return distinct restaurants
+        query = query.distinct()
+        
+        total = query.count()
+        restaurants = query.offset(skip).limit(limit).all()
+        
+        logger.info(f"Found {len(restaurants)} restaurants with offset={skip}, limit={limit}")
+        
+        if restaurants:
+            sample = restaurants[:3]
+            logger.info(f"Sample restaurants: {[{'id': r.id, 'name': r.restaurant_name} for r in sample]}")
+        
+        return restaurants
+    except Exception as e:
+        logger.error(f"Error fetching restaurants: {str(e)}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        return []
 
 @router.get("/{restaurant_id}", response_model=Restaurant)
-async def get_restaurant(restaurant_id: int, db: Session = Depends(get_db)):
+@cache_response(key_prefix="restaurant_detail", expiration_seconds=21600)  # 6 hours
+async def get_restaurant(
+    request: Request,
+    restaurant_id: int = Path(..., gt=0, description="ID of the restaurant to retrieve"),
+    db: Session = Depends(get_db)
+):
     """
     Get a specific restaurant by ID.
     """
-    restaurant = db.query(RestaurantModel).filter(RestaurantModel.id == restaurant_id).first()
-    if restaurant is None:
-        raise HTTPException(status_code=404, detail="Restaurant not found")
-    return restaurant
+    logger.info(f"Request URL: {request.url}")
+    logger.info(f"Fetching restaurant with ID: {restaurant_id}")
+    
+    try:
+        restaurant = db.query(RestaurantModel).filter(RestaurantModel.id == restaurant_id).first()
+        if restaurant is None:
+            logger.warning(f"Restaurant with ID {restaurant_id} not found")
+            raise HTTPException(status_code=404, detail="Restaurant not found")
+        
+        logger.info(f"Found restaurant: {restaurant.restaurant_name}")
+        return restaurant
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching restaurant with ID {restaurant_id}: {str(e)}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 @router.post("/", response_model=Restaurant)
 async def create_restaurant(restaurant: RestaurantCreate, db: Session = Depends(get_db)):
