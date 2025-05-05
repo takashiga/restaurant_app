@@ -644,10 +644,23 @@ const RestaurantListPage: React.FC = () => {
             <CircularProgress />
           </Box>
         ) : restaurants.length === 0 ? (
-          <Box sx={{ display: 'flex', justifyContent: 'center', my: 4 }}>
-            <Typography variant="h6" color="text.secondary">
+          <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', my: 4, p: 3, border: 1, borderColor: 'grey.300', borderRadius: 2 }}>
+            <Typography variant="h6" color="text.secondary" gutterBottom>
               検索結果がありません
             </Typography>
+            <Typography variant="body1" color="text.secondary" align="center" sx={{ mb: 2 }}>
+              {searchMode === 'filter' 
+                ? '検索条件を変更して、もう一度お試しください。' 
+                : 'キーワードを変更して、もう一度お試しください。'}
+            </Typography>
+            <Alert severity="info" sx={{ width: '100%', maxWidth: 500 }}>
+              <Typography variant="body2">
+                ヒント: 
+                {searchMode === 'filter' 
+                  ? '料理の種類やエリアの条件を広げてみてください。価格帯の範囲を広げることも効果的です。' 
+                  : 'より一般的なキーワードを使用してみてください。例: "寿司" "東京" "ラーメン"'}
+              </Typography>
+            </Alert>
           </Box>
         ) : viewMode === 'list' ? (
           <>

@@ -63,16 +63,47 @@ export interface NearbyRestaurantsParams {
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 
+console.log('Using API URL:', API_BASE_URL);
+
 export const restaurantApi = createApi({
   reducerPath: 'restaurantApi',
-  baseQuery: fetchBaseQuery({ baseUrl: API_BASE_URL }),
+  baseQuery: fetchBaseQuery({ 
+    baseUrl: API_BASE_URL,
+    prepareHeaders: (headers) => {
+      headers.set('Accept', 'application/json');
+      console.log('Request headers:', Object.fromEntries([...headers.entries()]));
+      return headers;
+    },
+    fetchFn: async (...args) => {
+      console.log('Making API request:', args[0]);
+      try {
+        const response = await fetch(...args);
+        console.log('API response status:', response.status);
+        return response;
+      } catch (error) {
+        console.error('API request failed:', error);
+        throw error;
+      }
+    }
+  }),
   tagTypes: ['Restaurant', 'CuisineType', 'SpecialFeature'],
   endpoints: (builder) => ({
     getRestaurants: builder.query<Restaurant[], RestaurantSearchParams>({
-      query: (params) => ({
-        url: '/restaurants/',
-        params,
-      }),
+      query: (params) => {
+        const filteredParams = Object.entries(params || {}).reduce((acc, [key, value]) => {
+          if (value !== undefined && value !== '') {
+            acc[key] = value;
+          }
+          return acc;
+        }, {} as Record<string, any>);
+        
+        console.log('Filtered restaurant query params:', filteredParams);
+        
+        return {
+          url: '/restaurants/',
+          params: filteredParams,
+        };
+      },
       providesTags: ['Restaurant'],
     }),
     
@@ -82,29 +113,74 @@ export const restaurantApi = createApi({
     }),
     
     searchRestaurants: builder.query<Restaurant[], RestaurantSearchKeywordParams>({
-      query: (params) => ({
-        url: '/restaurants/search/',
-        params,
-      }),
+      query: (params) => {
+        console.log('Search restaurants query params:', params);
+        return {
+          url: '/restaurants/search/',
+          params,
+        };
+      },
       providesTags: ['Restaurant'],
+      transformResponse: (response: Restaurant[]) => {
+        console.log('Search restaurants response:', response);
+        return response;
+      },
+      transformErrorResponse: (response) => {
+        console.error('Error searching restaurants:', response);
+        return response;
+      },
     }),
     
     getNearbyRestaurants: builder.query<Restaurant[], NearbyRestaurantsParams>({
-      query: (params) => ({
-        url: '/restaurants/nearby/',
-        params,
-      }),
+      query: (params) => {
+        console.log('Nearby restaurants query params:', params);
+        return {
+          url: '/restaurants/nearby/',
+          params: {
+            latitude: params.latitude,
+            longitude: params.longitude,
+            radius: params.radius || 2.0,
+            limit: params.limit || 20
+          },
+        };
+      },
       providesTags: ['Restaurant'],
     }),
     
     getCuisineTypes: builder.query<CuisineType[], void>({
-      query: () => '/restaurants/cuisine-types/',
+      query: () => {
+        console.log('Fetching cuisine types');
+        return {
+          url: '/restaurants/cuisine-types/',
+          params: {
+            skip: 0,
+            limit: 100
+          }
+        };
+      },
       providesTags: ['CuisineType'],
+      transformErrorResponse: (response) => {
+        console.error('Error fetching cuisine types:', response);
+        return [];
+      }
     }),
     
     getSpecialFeatures: builder.query<SpecialFeature[], void>({
-      query: () => '/restaurants/special-features/',
+      query: () => {
+        console.log('Fetching special features');
+        return {
+          url: '/restaurants/special-features/',
+          params: {
+            skip: 0,
+            limit: 100
+          }
+        };
+      },
       providesTags: ['SpecialFeature'],
+      transformErrorResponse: (response) => {
+        console.error('Error fetching special features:', response);
+        return [];
+      }
     }),
     
     createRestaurant: builder.mutation<Restaurant, Partial<Restaurant>>({

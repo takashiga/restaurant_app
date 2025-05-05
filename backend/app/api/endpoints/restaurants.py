@@ -20,43 +20,83 @@ router = APIRouter()
 @cache_response(key_prefix="restaurant_search", expiration_seconds=1800)  # 30 minutes
 async def search_restaurants(
     request: Request,
-    q: str = "",
+    q: Optional[str] = Query("", description="Search keyword"),
     db: Session = Depends(get_db),
-    skip: int = 0,
-    limit: int = 20,
+    skip: Optional[int] = Query(0, ge=0, description="Number of records to skip"),
+    limit: Optional[int] = Query(20, ge=1, le=100, description="Maximum number of records to return"),
 ):
     """
     Search for restaurants by keyword.
     The search is performed on restaurant name, address, and cuisine types.
+    
+    - **q**: Search keyword
+    - **skip**: Number of records to skip (for pagination)
+    - **limit**: Maximum number of records to return
     """
-    query = db.query(RestaurantModel).distinct()
+    logger.info(f"Search request received from: {request.client.host if hasattr(request, 'client') else 'unknown'}")
+    logger.info(f"Request URL: {request.url}")
+    logger.info(f"Request query params: {request.query_params}")
+    logger.info(f"Raw request parameters: q={q}, skip={skip}, limit={limit}")
+    logger.info(f"Request headers: {request.headers.get('user-agent', 'unknown')}")
     
-    name_address_filter = or_(
-        RestaurantModel.restaurant_name.ilike(f"%{q}%"),
-        RestaurantModel.address.ilike(f"%{q}%")
-    )
-    
-    cuisine_filter = RestaurantModel.id.in_(
-        db.query(restaurant_cuisine_association.c.restaurant_id)
-        .join(CuisineType, CuisineType.id == restaurant_cuisine_association.c.cuisine_type_id)
-        .filter(CuisineType.name.ilike(f"%{q}%"))
-        .subquery()
-    )
-    
-    query = query.filter(or_(name_address_filter, cuisine_filter))
-    
-    restaurants = query.offset(skip).limit(limit).all()
-    return restaurants
+    try:
+        if skip < 0:
+            logger.warning(f"Invalid skip parameter: {skip}, using default 0")
+            skip = 0
+            
+        if limit < 1 or limit > 100:
+            logger.warning(f"Invalid limit parameter: {limit}, using default 20")
+            limit = 20
+            
+        query = db.query(RestaurantModel).distinct()
+        
+        if q:
+            logger.info(f"Building search query for keyword: '{q}'")
+            name_address_filter = or_(
+                RestaurantModel.restaurant_name.ilike(f"%{q}%"),
+                RestaurantModel.address.ilike(f"%{q}%")
+            )
+            
+            cuisine_filter = RestaurantModel.id.in_(
+                db.query(restaurant_cuisine_association.c.restaurant_id)
+                .join(CuisineType, CuisineType.id == restaurant_cuisine_association.c.cuisine_type_id)
+                .filter(CuisineType.name.ilike(f"%{q}%"))
+                .subquery()
+            )
+            
+            query = query.filter(or_(name_address_filter, cuisine_filter))
+        else:
+            logger.info("No search keyword provided, returning all restaurants")
+        
+        total = query.count()
+        logger.info(f"Total matching restaurants before pagination: {total}")
+        
+        restaurants = query.offset(skip).limit(limit).all()
+        
+        logger.info(f"Found {len(restaurants)} restaurants matching '{q}' with offset={skip}, limit={limit}")
+        
+        if restaurants:
+            sample = restaurants[:3]
+            logger.info(f"Sample restaurants: {[{'id': r.id, 'name': r.restaurant_name} for r in sample]}")
+        else:
+            logger.warning(f"No restaurants found for search query: '{q}'")
+        
+        return restaurants
+    except Exception as e:
+        logger.error(f"Error searching restaurants: {str(e)}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        logger.error(f"Request parameters that caused error: q='{q}', skip={skip}, limit={limit}")
+        return []
 
 @router.get("/nearby/", response_model=List[Restaurant])
 @cache_response(key_prefix="restaurant_nearby", expiration_seconds=900)  # 15 minutes
 async def get_nearby_restaurants(
     request: Request,
-    latitude: float = Query(..., description="Latitude of the center point"),
-    longitude: float = Query(..., description="Longitude of the center point"),
-    radius: float = Query(2.0, ge=0.1, le=50.0, description="Search radius in kilometers"),
+    latitude: Optional[float] = Query(..., description="Latitude of the center point"),
+    longitude: Optional[float] = Query(..., description="Longitude of the center point"),
+    radius: Optional[float] = Query(2.0, ge=0.1, le=50.0, description="Search radius in kilometers"),
     db: Session = Depends(get_db),
-    limit: int = Query(20, ge=1, le=100, description="Maximum number of results to return"),
+    limit: Optional[int] = Query(20, ge=1, le=100, description="Maximum number of results to return"),
 ):
     """
     Get restaurants near a specific location.
@@ -107,8 +147,8 @@ async def get_nearby_restaurants(
 async def get_cuisine_types(
     request: Request,
     db: Session = Depends(get_db), 
-    skip: int = Query(0, ge=0), 
-    limit: int = Query(100, ge=1, le=1000)
+    skip: Optional[int] = Query(0, ge=0, description="Number of records to skip"), 
+    limit: Optional[int] = Query(100, ge=1, le=1000, description="Maximum number of records to return")
 ):
     """
     Get all cuisine types.
@@ -119,6 +159,7 @@ async def get_cuisine_types(
     logger.info(f"Request URL: {request.url}")
     logger.info(f"Request query params: {request.query_params}")
     logger.info(f"Raw request parameters for cuisine types: skip={skip}, limit={limit}")
+    logger.info(f"Parameter types: skip={type(skip)}, limit={type(limit)}")
     logger.info(f"Fetching all cuisine types with offset={skip}, limit={limit}")
     try:
         cuisine_types = db.query(CuisineType).offset(skip).limit(limit).all()
@@ -139,8 +180,8 @@ async def get_cuisine_types(
 async def get_special_features(
     request: Request,
     db: Session = Depends(get_db), 
-    skip: int = Query(0, ge=0),
-    limit: int = Query(100, ge=1, le=1000)
+    skip: Optional[int] = Query(0, ge=0, description="Number of records to skip"),
+    limit: Optional[int] = Query(100, ge=1, le=1000, description="Maximum number of records to return")
 ):
     """
     Get all special features.
@@ -172,17 +213,17 @@ async def get_special_features(
 async def get_restaurants(
     request: Request,
     db: Session = Depends(get_db),
-    skip: int = Query(0, ge=0),
-    limit: int = Query(20, ge=1, le=100),
-    name: str = Query("", min_length=0),
-    cuisine_type: str = Query("", min_length=0),
-    area: str = Query("", min_length=0),
-    min_price: int = Query(0, ge=0),
-    max_price: int = Query(0, ge=0),
-    special_feature: str = Query("", min_length=0),
-    latitude: float = Query(0.0),
-    longitude: float = Query(0.0),
-    radius: float = Query(0.0, ge=0.0),
+    skip: Optional[int] = Query(0, ge=0, description="Number of records to skip"),
+    limit: Optional[int] = Query(20, ge=1, le=100, description="Maximum number of records to return"),
+    name: Optional[str] = Query("", description="Restaurant name to filter by"),
+    cuisine_type: Optional[str] = Query("", description="Cuisine type to filter by"),
+    area: Optional[str] = Query("", description="Area to filter by"),
+    min_price: Optional[int] = Query(0, ge=0, description="Minimum price to filter by"),
+    max_price: Optional[int] = Query(0, ge=0, description="Maximum price to filter by"),
+    special_feature: Optional[str] = Query("", description="Special feature to filter by"),
+    latitude: Optional[float] = Query(0.0, description="Latitude for location-based search"),
+    longitude: Optional[float] = Query(0.0, description="Longitude for location-based search"),
+    radius: Optional[float] = Query(0.0, ge=0.0, description="Radius in kilometers for location-based search"),
 ):
     """
     Get a list of restaurants with optional filtering.
