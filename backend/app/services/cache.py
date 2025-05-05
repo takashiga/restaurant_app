@@ -132,3 +132,54 @@ class RateLimiter:
 
 api_cache = APICache()
 rate_limiter = RateLimiter(max_calls=5, period_seconds=1)  # HotPepper API limit: 5 requests per second
+
+def cache_response(key_prefix: str = "", ttl: Optional[int] = None, expiration_seconds: Optional[int] = None):
+    """Decorator to cache function responses.
+    
+    Args:
+        key_prefix: Prefix for the cache key
+        ttl: Optional custom expiration time in seconds (alias for expiration_seconds)
+        expiration_seconds: Optional custom expiration time in seconds
+    
+    Returns:
+        Decorated function
+    """
+    # Use ttl if provided, otherwise use expiration_seconds
+    cache_ttl = ttl if ttl is not None else expiration_seconds
+    
+    def decorator(func: Callable):
+        from functools import wraps
+        
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            # Remove FastAPI-specific parameters that shouldn't be part of the cache key
+            cache_kwargs = {k: v for k, v in kwargs.items() if k not in ['args', 'kwargs']}
+            
+            if cache_kwargs.get('use_cache') is False:
+                cache_kwargs_copy = cache_kwargs.copy()
+                if 'use_cache' in cache_kwargs_copy:
+                    del cache_kwargs_copy['use_cache']
+                return await func(*args, **{k: v for k, v in kwargs.items() if k not in ['use_cache']})
+            
+            cache_key = f"{key_prefix}:{func.__name__}:{str(args)}:{str(cache_kwargs)}"
+            
+            cached_result = api_cache.get(cache_key)
+            if cached_result is not None:
+                logger.debug(f"Using cached response for {cache_key}")
+                return cached_result
+            
+            result = await func(*args, **kwargs)
+            
+            if cache_ttl:
+                # Save with custom expiration
+                original_expiration = api_cache.expiration_seconds
+                api_cache.expiration_seconds = cache_ttl
+                api_cache.set(cache_key, result)
+                api_cache.expiration_seconds = original_expiration
+            else:
+                # Save with default expiration
+                api_cache.set(cache_key, result)
+            
+            return result
+        return wrapper
+    return decorator
