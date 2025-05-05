@@ -1,0 +1,22 @@
+app = "gourmet-compass-backend"
+primary_region = "nrt"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+[env]
+  PORT = "8080"
+
+[deploy]
+  release_command = "echo 'Starting deployment'"
+
+[processes]
+  app = "uvicorn app.main:app --host 0.0.0.0 --port 8080"
