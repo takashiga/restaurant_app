@@ -28,7 +28,7 @@ export const favoriteApi = createApi({
   tagTypes: ['Favorite'],
   endpoints: (builder) => ({
     getUserFavorites: builder.query<Favorite[], void>({
-      query: () => '/favorites/',
+      query: () => '/favorites', // Removed trailing slash as per user request
       providesTags: (result) =>
         result
           ? [
@@ -39,13 +39,13 @@ export const favoriteApi = createApi({
     }),
     
     checkFavorite: builder.query<boolean, number>({
-      query: (restaurantId) => `/favorites/check/${restaurantId}/`,
+      query: (restaurantId) => `/favorites/check/${restaurantId}`, // Removed trailing slash as per user request
       providesTags: (_, __, restaurantId) => [{ type: 'Favorite', id: restaurantId }],
     }),
     
     addFavorite: builder.mutation<Favorite, FavoriteCreate>({
       query: (favorite) => ({
-        url: '/favorites/', // Add trailing slash to match backend endpoint
+        url: '/favorites', // Removed trailing slash as per user request
         method: 'POST',
         body: favorite,
       }),
@@ -54,7 +54,7 @@ export const favoriteApi = createApi({
     
     removeFavorite: builder.mutation<void, number>({
       query: (restaurantId) => ({
-        url: `/favorites/${restaurantId}/`, // Add trailing slash to match backend endpoint
+        url: `/favorites/${restaurantId}`, // Removed trailing slash as per user request
         method: 'DELETE',
       }),
       invalidatesTags: (_, __, restaurantId) => [

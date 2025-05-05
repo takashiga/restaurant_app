@@ -44,7 +44,7 @@ export const reservationApi = createApi({
   tagTypes: ['Reservation'],
   endpoints: (builder) => ({
     getUserReservations: builder.query<Reservation[], void>({
-      query: () => '/reservations/',
+      query: () => '/reservations', // Removed trailing slash as per user request
       providesTags: (result) =>
         result
           ? [
@@ -55,13 +55,13 @@ export const reservationApi = createApi({
     }),
 
     getReservation: builder.query<Reservation, number>({
-      query: (id) => `/reservations/${id}/`,
+      query: (id) => `/reservations/${id}`, // Removed trailing slash as per user request
       providesTags: (_, __, id) => [{ type: 'Reservation', id }],
     }),
 
     createReservation: builder.mutation<Reservation, ReservationCreate>({
       query: (reservation) => ({
-        url: '/reservations/',
+        url: '/reservations', // Removed trailing slash as per user request
         method: 'POST',
         body: reservation,
       }),
@@ -70,7 +70,7 @@ export const reservationApi = createApi({
 
     updateReservation: builder.mutation<Reservation, { id: number; reservation: ReservationUpdate }>({
       query: ({ id, reservation }) => ({
-        url: `/reservations/${id}/`,
+        url: `/reservations/${id}`, // Removed trailing slash as per user request
         method: 'PUT',
         body: reservation,
       }),
@@ -82,7 +82,7 @@ export const reservationApi = createApi({
 
     cancelReservation: builder.mutation<void, number>({
       query: (id) => ({
-        url: `/reservations/${id}/cancel/`,
+        url: `/reservations/${id}/cancel`, // Removed trailing slash as per user request
         method: 'PUT',
       }),
       invalidatesTags: (_, __, id) => [

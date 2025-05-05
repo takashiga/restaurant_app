@@ -151,7 +151,7 @@ export const restaurantApi = createApi({
       query: () => {
         console.log('Fetching cuisine types');
         return {
-          url: '/restaurants/cuisine-types',
+          url: '/restaurants/cuisine-types', // No trailing slash as per user request
           params: {
             skip: 0,
             limit: 100
@@ -169,7 +169,7 @@ export const restaurantApi = createApi({
       query: () => {
         console.log('Fetching special features');
         return {
-          url: '/restaurants/special-features',
+          url: '/restaurants/special-features', // No trailing slash as per user request
           params: {
             skip: 0,
             limit: 100
