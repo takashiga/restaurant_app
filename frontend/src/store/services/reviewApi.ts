@@ -22,7 +22,7 @@ export interface ReviewUpdate {
   comment?: string;
 }
 
-const API_BASE_URL = 'http://localhost:8000/api/v1';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
 
 export const reviewApi = createApi({
   reducerPath: 'reviewApi',
@@ -62,7 +62,7 @@ export const reviewApi = createApi({
     
     getReview: builder.query<Review, number>({
       query: (id) => `/reviews/${id}`,
-      providesTags: (result, error, id) => [{ type: 'Review', id }],
+      providesTags: (_, __, id) => [{ type: 'Review', id }],
     }),
     
     createReview: builder.mutation<Review, ReviewCreate>({
@@ -80,7 +80,7 @@ export const reviewApi = createApi({
         method: 'PUT',
         body: review,
       }),
-      invalidatesTags: (result, error, { id }) => [
+      invalidatesTags: (_, __, { id }) => [
         { type: 'Review', id },
         { type: 'Review', id: 'LIST' },
         { type: 'Review', id: 'USER' },

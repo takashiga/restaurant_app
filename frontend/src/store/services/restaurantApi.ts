@@ -100,7 +100,7 @@ export const restaurantApi = createApi({
         console.log('Filtered restaurant query params:', filteredParams);
         
         return {
-          url: '/restaurants/',
+          url: '/restaurants',
           params: filteredParams,
         };
       },
@@ -108,7 +108,7 @@ export const restaurantApi = createApi({
     }),
     
     getRestaurantById: builder.query<Restaurant, number>({
-      query: (id) => `/restaurants/${id}/`,
+      query: (id) => `/restaurants/${id}`,
       providesTags: (_result, _error, id) => [{ type: 'Restaurant', id }],
     }),
     
@@ -116,7 +116,7 @@ export const restaurantApi = createApi({
       query: (params) => {
         console.log('Search restaurants query params:', params);
         return {
-          url: '/restaurants/search/',
+          url: '/restaurants/search',
           params,
         };
       },
@@ -135,7 +135,7 @@ export const restaurantApi = createApi({
       query: (params) => {
         console.log('Nearby restaurants query params:', params);
         return {
-          url: '/restaurants/nearby/',
+          url: '/restaurants/nearby',
           params: {
             latitude: params.latitude,
             longitude: params.longitude,
@@ -151,7 +151,7 @@ export const restaurantApi = createApi({
       query: () => {
         console.log('Fetching cuisine types');
         return {
-          url: '/restaurants/cuisine-types/',
+          url: '/restaurants/cuisine-types',
           params: {
             skip: 0,
             limit: 100
@@ -169,7 +169,7 @@ export const restaurantApi = createApi({
       query: () => {
         console.log('Fetching special features');
         return {
-          url: '/restaurants/special-features/',
+          url: '/restaurants/special-features',
           params: {
             skip: 0,
             limit: 100
@@ -185,7 +185,7 @@ export const restaurantApi = createApi({
     
     createRestaurant: builder.mutation<Restaurant, Partial<Restaurant>>({
       query: (restaurant) => ({
-        url: '/restaurants/',
+        url: '/restaurants',
         method: 'POST',
         body: restaurant,
       }),
@@ -194,7 +194,7 @@ export const restaurantApi = createApi({
     
     updateRestaurant: builder.mutation<Restaurant, { id: number; restaurant: Partial<Restaurant> }>({
       query: ({ id, restaurant }) => ({
-        url: `/restaurants/${id}/`,
+        url: `/restaurants/${id}`,
         method: 'PUT',
         body: restaurant,
       }),
@@ -203,7 +203,7 @@ export const restaurantApi = createApi({
     
     deleteRestaurant: builder.mutation<{ status: string; message: string }, number>({
       query: (id) => ({
-        url: `/restaurants/${id}/`,
+        url: `/restaurants/${id}`,
         method: 'DELETE',
       }),
       invalidatesTags: (_result, _error, id) => [{ type: 'Restaurant', id }],
