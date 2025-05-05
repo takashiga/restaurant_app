@@ -25,7 +25,7 @@ export interface AuthResponse {
   token_type: string;
 }
 
-const API_BASE_URL = 'http://localhost:8000/api/v1';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://localhost:8000/api/v1';
 
 export const authApi = createApi({
   reducerPath: 'authApi',
@@ -44,18 +44,30 @@ export const authApi = createApi({
   tagTypes: ['User'],
   endpoints: (builder) => ({
     login: builder.mutation<AuthResponse, UserCredentials>({
-      query: (credentials) => ({
-        url: '/auth/token',
-        method: 'POST',
-        body: new URLSearchParams({
-          username: credentials.username,
-          password: credentials.password,
-        }),
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-      }),
+      query: (credentials) => {
+        console.log('Sending login request with credentials:', credentials);
+        return {
+          url: '/auth/token',
+          method: 'POST',
+          body: new URLSearchParams({
+            username: credentials.username,
+            password: credentials.password,
+          }),
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+        };
+      },
       invalidatesTags: ['User'],
+      onQueryStarted: async (credentials, { queryFulfilled }) => {
+        console.log('Login query started with:', credentials);
+        try {
+          const result = await queryFulfilled;
+          console.log('Login query fulfilled:', result);
+        } catch (error) {
+          console.error('Login query failed:', error);
+        }
+      },
     }),
     
     register: builder.mutation<User, UserRegistration>({

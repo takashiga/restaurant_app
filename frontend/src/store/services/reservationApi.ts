@@ -27,7 +27,7 @@ export interface ReservationUpdate {
   status?: string;
 }
 
-const API_BASE_URL = 'http://localhost:8000/api/v1';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://localhost:8000/api/v1';
 
 export const reservationApi = createApi({
   reducerPath: 'reservationApi',
@@ -44,7 +44,7 @@ export const reservationApi = createApi({
   tagTypes: ['Reservation'],
   endpoints: (builder) => ({
     getUserReservations: builder.query<Reservation[], void>({
-      query: () => '/reservations',
+      query: () => '/reservations/',
       providesTags: (result) =>
         result
           ? [
@@ -53,39 +53,39 @@ export const reservationApi = createApi({
             ]
           : [{ type: 'Reservation', id: 'LIST' }],
     }),
-    
+
     getReservation: builder.query<Reservation, number>({
-      query: (id) => `/reservations/${id}`,
-      providesTags: (result, error, id) => [{ type: 'Reservation', id }],
+      query: (id) => `/reservations/${id}/`,
+      providesTags: (_, __, id) => [{ type: 'Reservation', id }],
     }),
-    
+
     createReservation: builder.mutation<Reservation, ReservationCreate>({
       query: (reservation) => ({
-        url: '/reservations',
+        url: '/reservations/',
         method: 'POST',
         body: reservation,
       }),
       invalidatesTags: [{ type: 'Reservation', id: 'LIST' }],
     }),
-    
+
     updateReservation: builder.mutation<Reservation, { id: number; reservation: ReservationUpdate }>({
       query: ({ id, reservation }) => ({
-        url: `/reservations/${id}`,
+        url: `/reservations/${id}/`,
         method: 'PUT',
         body: reservation,
       }),
-      invalidatesTags: (result, error, { id }) => [
+      invalidatesTags: (_, __, { id }) => [
         { type: 'Reservation', id },
         { type: 'Reservation', id: 'LIST' },
       ],
     }),
-    
+
     cancelReservation: builder.mutation<void, number>({
       query: (id) => ({
-        url: `/reservations/${id}/cancel`,
+        url: `/reservations/${id}/cancel/`,
         method: 'PUT',
       }),
-      invalidatesTags: (result, error, id) => [
+      invalidatesTags: (_, __, id) => [
         { type: 'Reservation', id },
         { type: 'Reservation', id: 'LIST' },
       ],

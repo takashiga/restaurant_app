@@ -11,7 +11,7 @@ export interface FavoriteCreate {
   restaurant_id: number;
 }
 
-const API_BASE_URL = 'http://localhost:8000/api/v1';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://localhost:8000/api/v1';
 
 export const favoriteApi = createApi({
   reducerPath: 'favoriteApi',
@@ -28,7 +28,7 @@ export const favoriteApi = createApi({
   tagTypes: ['Favorite'],
   endpoints: (builder) => ({
     getUserFavorites: builder.query<Favorite[], void>({
-      query: () => '/favorites',
+      query: () => '/favorites/',
       providesTags: (result) =>
         result
           ? [
@@ -39,14 +39,13 @@ export const favoriteApi = createApi({
     }),
     
     checkFavorite: builder.query<boolean, number>({
-      query: (restaurantId) => `/favorites/check/${restaurantId}`,
-      transformResponse: (response: { is_favorite: boolean }) => response.is_favorite,
-      providesTags: (result, error, restaurantId) => [{ type: 'Favorite', id: restaurantId }],
+      query: (restaurantId) => `/favorites/check/${restaurantId}/`,
+      providesTags: (_, __, restaurantId) => [{ type: 'Favorite', id: restaurantId }],
     }),
     
     addFavorite: builder.mutation<Favorite, FavoriteCreate>({
       query: (favorite) => ({
-        url: '/favorites',
+        url: '/favorites/', // Add trailing slash to match backend endpoint
         method: 'POST',
         body: favorite,
       }),
@@ -55,10 +54,10 @@ export const favoriteApi = createApi({
     
     removeFavorite: builder.mutation<void, number>({
       query: (restaurantId) => ({
-        url: `/favorites/${restaurantId}`,
+        url: `/favorites/${restaurantId}/`, // Add trailing slash to match backend endpoint
         method: 'DELETE',
       }),
-      invalidatesTags: (result, error, restaurantId) => [
+      invalidatesTags: (_, __, restaurantId) => [
         { type: 'Favorite', id: 'LIST' },
         { type: 'Favorite', id: restaurantId },
       ],

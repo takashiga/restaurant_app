@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>API直接テスト - グルメコンパス</title>
+    <style>
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1, h2 {
+            color: #1976d2;
+        }
+        .container {
+            background: #f9f9f9;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        button {
+            background: #1976d2;
+            color: white;
+            border: none;
+            padding: 12px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 10px 10px 0;
+        }
+        button:hover {
+            background: #1565c0;
+        }
+        pre {
+            background: #f5f5f5;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+            border-left: 4px solid #ddd;
+        }
+        .success {
+            border-left: 4px solid #4caf50;
+        }
+        .error {
+            border-left: 4px solid #f44336;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>グルメコンパス - API直接テスト</h1>
+    
+    <div class="container">
+        <h2>1. 認証テスト</h2>
+        <button id="getTokenBtn">トークン取得</button>
+        <button id="testTokenBtn">トークンテスト</button>
+        <button id="clearTokenBtn">トークンクリア</button>
+        
+        <div id="tokenResult" class="hidden">
+            <h3>結果:</h3>
+            <pre id="tokenResultContent"></pre>
+        </div>
+    </div>
+    
+    <div class="container">
+        <h2>2. レストラン一覧テスト</h2>
+        <button id="getRestaurantsBtn">レストラン一覧取得</button>
+        
+        <div id="restaurantsResult" class="hidden">
+            <h3>結果:</h3>
+            <pre id="restaurantsResultContent"></pre>
+        </div>
+    </div>
+    
+    <div class="container">
+        <h2>3. お気に入りテスト</h2>
+        <button id="getFavoritesBtn">お気に入り一覧取得</button>
+        <button id="addFavoriteBtn">お気に入り追加 (ID: 1)</button>
+        <button id="removeFavoriteBtn">お気に入り削除 (ID: 1)</button>
+        
+        <div id="favoritesResult" class="hidden">
+            <h3>結果:</h3>
+            <pre id="favoritesResultContent"></pre>
+        </div>
+    </div>
+    
+    <div class="container">
+        <h2>4. レビューテスト</h2>
+        <button id="getReviewsBtn">レビュー一覧取得</button>
+        <button id="addReviewBtn">レビュー追加 (ID: 1)</button>
+        
+        <div id="reviewsResult" class="hidden">
+            <h3>結果:</h3>
+            <pre id="reviewsResultContent"></pre>
+        </div>
+    </div>
+    
+    <div class="container">
+        <h2>5. 予約テスト</h2>
+        <button id="getReservationsBtn">予約一覧取得</button>
+        <button id="addReservationBtn">予約追加 (ID: 1)</button>
+        
+        <div id="reservationsResult" class="hidden">
+            <h3>結果:</h3>
+            <pre id="reservationsResultContent"></pre>
+        </div>
+    </div>
+
+    <script>
+        // API Base URL
+        const API_BASE_URL = 'https://localhost:8000/api/v1';
+        
+        // DOM Elements
+        const getTokenBtn = document.getElementById('getTokenBtn');
+        const testTokenBtn = document.getElementById('testTokenBtn');
+        const clearTokenBtn = document.getElementById('clearTokenBtn');
+        const tokenResult = document.getElementById('tokenResult');
+        const tokenResultContent = document.getElementById('tokenResultContent');
+        
+        const getRestaurantsBtn = document.getElementById('getRestaurantsBtn');
+        const restaurantsResult = document.getElementById('restaurantsResult');
+        const restaurantsResultContent = document.getElementById('restaurantsResultContent');
+        
+        const getFavoritesBtn = document.getElementById('getFavoritesBtn');
+        const addFavoriteBtn = document.getElementById('addFavoriteBtn');
+        const removeFavoriteBtn = document.getElementById('removeFavoriteBtn');
+        const favoritesResult = document.getElementById('favoritesResult');
+        const favoritesResultContent = document.getElementById('favoritesResultContent');
+        
+        const getReviewsBtn = document.getElementById('getReviewsBtn');
+        const addReviewBtn = document.getElementById('addReviewBtn');
+        const reviewsResult = document.getElementById('reviewsResult');
+        const reviewsResultContent = document.getElementById('reviewsResultContent');
+        
+        const getReservationsBtn = document.getElementById('getReservationsBtn');
+        const addReservationBtn = document.getElementById('addReservationBtn');
+        const reservationsResult = document.getElementById('reservationsResult');
+        const reservationsResultContent = document.getElementById('reservationsResultContent');
+        
+        // Helper Functions
+        function showResult(resultElement, contentElement, data, isError = false) {
+            resultElement.classList.remove('hidden');
+            contentElement.classList.remove('success', 'error');
+            contentElement.classList.add(isError ? 'error' : 'success');
+            
+            if (typeof data === 'object') {
+                contentElement.textContent = JSON.stringify(data, null, 2);
+            } else {
+                contentElement.textContent = data;
+            }
+        }
+        
+        async function makeApiCall(url, method = 'GET', body = null, needsAuth = false) {
+            const headers = {
+                'Content-Type': 'application/json'
+            };
+            
+            if (needsAuth) {
+                const token = localStorage.getItem('token');
+                if (!token) {
+                    return { error: 'No authentication token found. Please get a token first.' };
+                }
+                headers['Authorization'] = `Bearer ${token}`;
+            }
+            
+            try {
+                const options = {
+                    method,
+                    headers
+                };
+                
+                if (body && method !== 'GET') {
+                    options.body = JSON.stringify(body);
+                }
+                
+                console.log(`Making ${method} request to ${url}`, options);
+                
+                const response = await fetch(url, options);
+                console.log(`Response status: ${response.status}`);
+                
+                let responseData;
+                const contentType = response.headers.get('content-type');
+                if (contentType && contentType.includes('application/json')) {
+                    responseData = await response.json();
+                } else {
+                    responseData = await response.text();
+                }
+                
+                if (!response.ok) {
+                    return {
+                        error: `Error ${response.status}: ${response.statusText}`,
+                        details: responseData
+                    };
+                }
+                
+                return responseData;
+            } catch (error) {
+                console.error('API call error:', error);
+                return { error: error.message };
+            }
+        }
+        
+        // Event Listeners
+        getTokenBtn.addEventListener('click', async () => {
+            console.log('Get token button clicked');
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/auth/token`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: new URLSearchParams({
+                        username: 'testuser',
+                        password: 'password123',
+                    }),
+                });
+                
+                console.log('Token response status:', response.status);
+                
+                const data = await response.json();
+                console.log('Token response data:', data);
+                
+                if (response.ok) {
+                    localStorage.setItem('token', data.access_token);
+                    showResult(tokenResult, tokenResultContent, {
+                        message: 'Token successfully obtained and stored in localStorage',
+                        token: data.access_token
+                    });
+                } else {
+                    showResult(tokenResult, tokenResultContent, {
+                        error: `Error ${response.status}: ${response.statusText}`,
+                        details: data
+                    }, true);
+                }
+            } catch (error) {
+                console.error('Get token error:', error);
+                showResult(tokenResult, tokenResultContent, {
+                    error: error.message
+                }, true);
+            }
+        });
+        
+        testTokenBtn.addEventListener('click', async () => {
+            console.log('Test token button clicked');
+            
+            const token = localStorage.getItem('token');
+            if (!token) {
+                showResult(tokenResult, tokenResultContent, {
+                    error: 'No token found in localStorage. Please get a token first.'
+                }, true);
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_BASE_URL}/auth/me`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+                
+                console.log('Test token response status:', response.status);
+                
+                const data = await response.json();
+                console.log('Test token response data:', data);
+                
+                showResult(tokenResult, tokenResultContent, {
+                    message: 'Token test result',
+                    status: response.status,
+                    data
+                }, !response.ok);
+            } catch (error) {
+                console.error('Test token error:', error);
+                showResult(tokenResult, tokenResultContent, {
+                    error: error.message
+                }, true);
+            }
+        });
+        
+        clearTokenBtn.addEventListener('click', () => {
+            console.log('Clear token button clicked');
+            
+            localStorage.removeItem('token');
+            showResult(tokenResult, tokenResultContent, {
+                message: 'Token cleared from localStorage'
+            });
+        });
+        
+        getRestaurantsBtn.addEventListener('click', async () => {
+            console.log('Get restaurants button clicked');
+            
+            const data = await makeApiCall(`${API_BASE_URL}/restaurants/`);
+            showResult(restaurantsResult, restaurantsResultContent, data, data.error);
+        });
+        
+        getFavoritesBtn.addEventListener('click', async () => {
+            console.log('Get favorites button clicked');
+            
+            const data = await makeApiCall(`${API_BASE_URL}/favorites/`, 'GET', null, true);
+            showResult(favoritesResult, favoritesResultContent, data, data.error);
+        });
+        
+        addFavoriteBtn.addEventListener('click', async () => {
+            console.log('Add favorite button clicked');
+            
+            const data = await makeApiCall(`${API_BASE_URL}/favorites/`, 'POST', {
+                restaurant_id: 1
+            }, true);
+            showResult(favoritesResult, favoritesResultContent, data, data.error);
+        });
+        
+        removeFavoriteBtn.addEventListener('click', async () => {
+            console.log('Remove favorite button clicked');
+            
+            const data = await makeApiCall(`${API_BASE_URL}/favorites/1/`, 'DELETE', null, true);
+            showResult(favoritesResult, favoritesResultContent, data, data.error);
+        });
+        
+        getReviewsBtn.addEventListener('click', async () => {
+            console.log('Get reviews button clicked');
+            
+            const data = await makeApiCall(`${API_BASE_URL}/reviews/`);
+            showResult(reviewsResult, reviewsResultContent, data, data.error);
+        });
+        
+        addReviewBtn.addEventListener('click', async () => {
+            console.log('Add review button clicked');
+            
+            const data = await makeApiCall(`${API_BASE_URL}/reviews/`, 'POST', {
+                restaurant_id: 1,
+                rating: 4,
+                comment: 'テストレビューです。とても美味しかったです！'
+            }, true);
+            showResult(reviewsResult, reviewsResultContent, data, data.error);
+        });
+        
+        getReservationsBtn.addEventListener('click', async () => {
+            console.log('Get reservations button clicked');
+            
+            const data = await makeApiCall(`${API_BASE_URL}/reservations/`, 'GET', null, true);
+            showResult(reservationsResult, reservationsResultContent, data, data.error);
+        });
+        
+        addReservationBtn.addEventListener('click', async () => {
+            console.log('Add reservation button clicked');
+            
+            // Get tomorrow's date at 19:00
+            const tomorrow = new Date();
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            tomorrow.setHours(19, 0, 0, 0);
+            
+            const data = await makeApiCall(`${API_BASE_URL}/reservations/`, 'POST', {
+                restaurant_id: 1,
+                reservation_time: tomorrow.toISOString(),
+                party_size: 2,
+                notes: 'テスト予約です。'
+            }, true);
+            showResult(reservationsResult, reservationsResultContent, data, data.error);
+        });
+        
+        // Add global click event listener for debugging
+        document.addEventListener('click', (e) => {
+            console.log('Document click detected:', e.target);
+        });
+        
+        // Log initial state
+        console.log('DOM fully loaded');
+        console.log('Current token in localStorage:', localStorage.getItem('token'));
+    </script>
+</body>
+</html>

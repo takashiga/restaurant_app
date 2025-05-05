@@ -22,7 +22,7 @@ export interface ReviewUpdate {
   comment?: string;
 }
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api/v1';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://localhost:8000/api/v1';
 
 export const reviewApi = createApi({
   reducerPath: 'reviewApi',
