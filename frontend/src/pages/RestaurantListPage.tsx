@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { 
   Typography, Box, Container, Grid, Card, CardContent, 
   CardMedia, CardActionArea, TextField, Button, FormControl,
   InputLabel, Select, MenuItem, CircularProgress, Pagination,
-  Tabs, Tab, Slider, Chip, Paper, Divider, Tooltip
+  Tabs, Tab, Slider, Chip, Paper, Divider, Tooltip, Alert,
+  Skeleton, useTheme, useMediaQuery
 } from '@mui/material';
 import { SelectChangeEvent } from '@mui/material/Select';
 import { useNavigate } from 'react-router-dom';
@@ -12,9 +13,11 @@ import MapIcon from '@mui/icons-material/Map';
 import ListIcon from '@mui/icons-material/List';
 import LocationOnIcon from '@mui/icons-material/LocationOn';
 import RestaurantIcon from '@mui/icons-material/Restaurant';
+import ImageNotSupportedIcon from '@mui/icons-material/ImageNotSupported';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
+import { FixedSizeGrid } from 'react-window';
 import { 
   useGetRestaurantsQuery, 
   useSearchRestaurantsQuery, 
@@ -33,10 +36,16 @@ L.Icon.Default.mergeOptions({
 
 const RestaurantListPage: React.FC = () => {
   const navigate = useNavigate();
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('sm'));
+  const isTablet = useMediaQuery(theme.breakpoints.between('sm', 'md'));
   const [viewMode, setViewMode] = useState<'list' | 'map'>('list');
   const [searchMode, setSearchMode] = useState<'filter' | 'keyword'>('filter');
   const [page, setPage] = useState(1);
   const [itemsPerPage] = useState(12);
+  
+  const [imageLoadingStates, setImageLoadingStates] = useState<Record<number, boolean>>({});
+  const [imageErrorStates, setImageErrorStates] = useState<Record<number, boolean>>({});
   
   const [filterParams, setFilterParams] = useState<RestaurantSearchParams>({
     name: '',
@@ -60,6 +69,75 @@ const RestaurantListPage: React.FC = () => {
   const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);
   
   const [userLocation, setUserLocation] = useState<{lat: number, lng: number} | null>(null);
+  const [locationLoading, setLocationLoading] = useState(false);
+  const [locationError, setLocationError] = useState('');
+  
+  const cuisineImageMap = useMemo(() => ({
+    '寿司': 'sushi',
+    'ラーメン': 'ramen',
+    '焼肉': 'yakiniku',
+    'イタリアン': 'italian',
+    'フレンチ': 'french',
+    '和食': 'japanese',
+    '中華': 'chinese',
+    'カフェ': 'cafe',
+    'バー': 'bar',
+    '居酒屋': 'izakaya',
+    'ファミレス': 'family-restaurant',
+    'カレー': 'curry',
+    'ステーキ': 'steak',
+    'ハンバーガー': 'burger',
+    'パスタ': 'pasta',
+    'ピザ': 'pizza',
+    'デザート': 'dessert',
+    '韓国料理': 'korean',
+    'タイ料理': 'thai',
+    'ベトナム料理': 'vietnamese',
+    'インド料理': 'indian',
+    'メキシコ料理': 'mexican',
+    '洋食': 'western',
+    'その他': 'restaurant'
+  }), []);
+  
+  const getRestaurantImage = (restaurant: any) => {
+    const cuisineType = restaurant.cuisine_types && 
+                       Array.isArray(restaurant.cuisine_types) && 
+                       restaurant.cuisine_types.length > 0 &&
+                       restaurant.cuisine_types[0]?.name
+      ? restaurant.cuisine_types[0].name
+      : 'restaurant';
+    
+    // Type-safe access to cuisineImageMap with fallback
+    let imageKeyword = 'food';
+    if (cuisineType in cuisineImageMap) {
+      imageKeyword = cuisineImageMap[cuisineType as keyof typeof cuisineImageMap];
+    }
+    
+    const restaurantId = restaurant.id || 1;
+    const imageId = (restaurantId % 30) + 1; // Limit to 30 different images for better caching
+    
+    return `https://source.unsplash.com/collection/4316748/300x200?${encodeURIComponent(imageKeyword)}&sig=${imageId}`;
+  };
+  
+  const handleImageLoad = (restaurantId: number) => {
+    console.log(`Image loaded for restaurant ${restaurantId}`);
+    setImageLoadingStates(prev => ({
+      ...prev,
+      [restaurantId]: false // Set to false when loaded
+    }));
+  };
+  
+  const handleImageError = (restaurantId: number) => {
+    console.log(`Image error for restaurant ${restaurantId}`);
+    setImageErrorStates(prev => ({
+      ...prev,
+      [restaurantId]: true
+    }));
+    setImageLoadingStates(prev => ({
+      ...prev,
+      [restaurantId]: false // Also set loading to false on error
+    }));
+  };
   
   const { data: cuisineTypes = [] } = useGetCuisineTypesQuery();
   const { data: specialFeatures = [] } = useGetSpecialFeaturesQuery();
@@ -83,6 +161,28 @@ const RestaurantListPage: React.FC = () => {
   const restaurants = searchMode === 'keyword' ? keywordRestaurants : filteredRestaurants;
   const isLoading = searchMode === 'keyword' ? isLoadingKeyword : isLoadingFiltered;
   const isFetching = searchMode === 'keyword' ? isFetchingKeyword : isFetchingFiltered;
+  
+  const getColumnCount = useCallback(() => {
+    if (isMobile) return 1;
+    if (isTablet) return 2;
+    return 3;
+  }, [isMobile, isTablet]);
+  
+  const columnCount = getColumnCount();
+  const rowCount = Math.ceil((restaurants.length / columnCount));
+  
+  
+  useEffect(() => {
+    const newLoadingStates: Record<number, boolean> = {};
+    
+    restaurants.forEach(restaurant => {
+      newLoadingStates[restaurant.id] = true;
+    });
+    
+    setImageLoadingStates(newLoadingStates);
+    setImageErrorStates({});
+  }, [restaurants]);
+
   
   useEffect(() => {
     if (navigator.geolocation) {
@@ -126,12 +226,37 @@ const RestaurantListPage: React.FC = () => {
     }
   }, [page, searchMode, itemsPerPage]);
   
+  useEffect(() => {
+    if (restaurants && Array.isArray(restaurants) && restaurants.length > 0) {
+      console.log(`Initializing image states for ${restaurants.length} restaurants`);
+      
+      const initialLoadingStates: Record<number, boolean> = {};
+      const initialErrorStates: Record<number, boolean> = {};
+      
+      restaurants.forEach(restaurant => {
+        if (restaurant && typeof restaurant.id === 'number') {
+          initialLoadingStates[restaurant.id] = true;
+          initialErrorStates[restaurant.id] = false;
+          
+          const img = new Image();
+          img.src = getRestaurantImage(restaurant);
+          img.onload = () => handleImageLoad(restaurant.id);
+          img.onerror = () => handleImageError(restaurant.id);
+        }
+      });
+      
+      setImageLoadingStates(initialLoadingStates);
+      setImageErrorStates(initialErrorStates);
+    }
+  }, [restaurants]);
+  
   const handleSearchModeChange = (_event: React.SyntheticEvent, newMode: 'filter' | 'keyword') => {
     setSearchMode(newMode);
     setPage(1);
   };
   
   const handleViewModeChange = (_event: React.SyntheticEvent, newMode: 'list' | 'map') => {
+    console.log('handleViewModeChange called with newMode:', newMode);
     setViewMode(newMode);
   };
   
@@ -173,33 +298,175 @@ const RestaurantListPage: React.FC = () => {
   };
   
   const handleRestaurantClick = (id: number) => {
-    navigate(`/restaurants/${id}`);
-  };
-  
-  const handleGetCurrentLocation = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setUserLocation({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude
-          });
-          
-          setFilterParams(prev => ({
-            ...prev,
-            latitude: position.coords.latitude,
-            longitude: position.coords.longitude,
-            radius: 2.0 // 2km radius
-          }));
-        },
-        (error) => {
-          console.error('Error getting location:', error);
-        }
-      );
+    console.log('handleRestaurantClick called with id:', id);
+    try {
+      navigate(`/restaurants/${id}`);
+      console.log('Navigation attempted to:', `/restaurants/${id}`);
+    } catch (error) {
+      console.error('Navigation error:', error);
     }
   };
   
+  const handleGetCurrentLocation = () => {
+    setLocationLoading(true);
+    setLocationError('');
+    
+    if (!navigator.geolocation) {
+      setLocationError('位置情報が利用できません。お使いのブラウザは位置情報をサポートしていません。');
+      setLocationLoading(false);
+      return;
+    }
+    
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        console.log('Geolocation retrieved:', position.coords.latitude, position.coords.longitude);
+        setUserLocation({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude
+        });
+        
+        setFilterParams(prev => ({
+          ...prev,
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          radius: 2.0 // Ensure radius is set
+        }));
+        setLocationLoading(false);
+        handleSearch();
+      },
+      (error) => {
+        console.error('Geolocation error:', error);
+        let errorMessage = '位置情報の取得に失敗しました。';
+        switch (error.code) {
+          case error.PERMISSION_DENIED:
+            errorMessage = '位置情報へのアクセスが拒否されました。ブラウザの設定で位置情報の利用を許可してください。';
+            break;
+          case error.POSITION_UNAVAILABLE:
+            errorMessage = '位置情報が取得できませんでした。再度お試しください。';
+            break;
+          case error.TIMEOUT:
+            errorMessage = '位置情報の取得がタイムアウトしました。再度お試しください。';
+            break;
+        }
+        setLocationError(errorMessage);
+        setLocationLoading(false);
+      },
+      { 
+        enableHighAccuracy: true, 
+        timeout: 10000, 
+        maximumAge: 0 
+      }
+    );
+  };
+  
   const totalPages = Math.ceil(restaurants.length / itemsPerPage);
+  
+  const RestaurantCell = useCallback(({ columnIndex, rowIndex, style, data }: { columnIndex: number, rowIndex: number, style: React.CSSProperties, data: any }) => {
+    const index = rowIndex * columnCount + columnIndex;
+    if (index >= data.length) return null;
+    
+    const restaurant = data[index];
+    if (!restaurant) return null;
+    
+    return (
+      <div style={{
+        ...style,
+        padding: '12px',
+        boxSizing: 'border-box'
+      }}>
+        <Card 
+          sx={{ 
+            height: '100%',
+            cursor: 'pointer',
+            transition: 'transform 0.2s, box-shadow 0.2s',
+            '&:hover': {
+              transform: 'translateY(-4px)',
+              boxShadow: 6
+            }
+          }}
+          onClick={() => handleRestaurantClick(restaurant.id)}
+          data-testid={`restaurant-card-${restaurant.id}`}
+        >
+          <CardActionArea>
+            {imageErrorStates[restaurant.id] ? (
+              <Box 
+                sx={{ 
+                  height: 140, 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  justifyContent: 'center',
+                  bgcolor: 'grey.200' 
+                }}
+              >
+                <ImageNotSupportedIcon sx={{ fontSize: 40, color: 'grey.500' }} />
+              </Box>
+            ) : (
+              <>
+                {imageLoadingStates[restaurant.id] && (
+                  <Skeleton 
+                    variant="rectangular" 
+                    height={140} 
+                    animation="wave" 
+                    sx={{ 
+                      bgcolor: 'grey.200',
+                      borderTopLeftRadius: 4,
+                      borderTopRightRadius: 4
+                    }} 
+                  />
+                )}
+                <CardMedia
+                  component="img"
+                  height="140"
+                  image={getRestaurantImage(restaurant)}
+                  alt={restaurant.restaurant_name}
+                  loading="lazy"
+                  sx={{ 
+                    display: imageLoadingStates[restaurant.id] ? 'none' : 'block',
+                    objectFit: 'cover',
+                    transition: 'opacity 0.3s ease-in-out',
+                    opacity: 0.9,
+                    '&:hover': {
+                      opacity: 1
+                    },
+                    backgroundColor: 'grey.100'
+                  }}
+                  onLoad={() => handleImageLoad(restaurant.id)}
+                  onError={() => handleImageError(restaurant.id)}
+                />
+              </>
+            )}
+            <CardContent>
+              <Typography gutterBottom variant="h6" component="div" noWrap>
+                {restaurant.restaurant_name}
+              </Typography>
+              <Typography variant="body2" color="text.secondary" gutterBottom>
+                {restaurant.cuisine_types.map((c: { id: number, name: string }) => c.name).join(', ')}
+              </Typography>
+              <Typography variant="body2" color="text.secondary" gutterBottom>
+                {restaurant.address}
+              </Typography>
+              {restaurant.price_range_dinner && (
+                <Typography variant="body2" color="text.secondary">
+                  <RestaurantIcon fontSize="small" sx={{ verticalAlign: 'middle', mr: 0.5 }} />
+                  {restaurant.price_range_dinner}
+                </Typography>
+              )}
+              {restaurant.special_features.length > 0 && (
+                <Box sx={{ mt: 1, display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                  {restaurant.special_features.slice(0, 2).map((feature: { id: number, name: string }) => (
+                    <Chip key={feature.id} label={feature.name} size="small" />
+                  ))}
+                  {restaurant.special_features.length > 2 && (
+                    <Chip label={`+${restaurant.special_features.length - 2}`} size="small" />
+                  )}
+                </Box>
+              )}
+            </CardContent>
+          </CardActionArea>
+        </Card>
+      </div>
+    );
+  }, [columnCount, handleRestaurantClick, imageErrorStates, imageLoadingStates, handleImageLoad, handleImageError, getRestaurantImage]);
   
   return (
     <Container maxWidth="lg">
@@ -210,9 +477,14 @@ const RestaurantListPage: React.FC = () => {
         
         {/* View Mode Tabs */}
         <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}>
-          <Tabs value={viewMode} onChange={handleViewModeChange} aria-label="view mode">
-            <Tab icon={<ListIcon />} label="リスト" value="list" />
-            <Tab icon={<MapIcon />} label="マップ" value="map" />
+          <Tabs 
+            value={viewMode} 
+            onChange={handleViewModeChange} 
+            aria-label="view mode"
+            data-testid="view-mode-tabs"
+          >
+            <Tab icon={<ListIcon />} label="リスト" value="list" data-testid="list-tab" />
+            <Tab icon={<MapIcon />} label="マップ" value="map" data-testid="map-tab" />
           </Tabs>
         </Box>
         
@@ -307,25 +579,33 @@ const RestaurantListPage: React.FC = () => {
                 </Grid>
               </Grid>
               
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 2 }}>
-                <Tooltip title="現在地から検索">
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 2 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <Tooltip title="現在地から検索">
+                    <Button
+                      variant="outlined"
+                      startIcon={locationLoading ? <CircularProgress size={20} /> : <LocationOnIcon />}
+                      onClick={handleGetCurrentLocation}
+                      disabled={locationLoading}
+                    >
+                      {locationLoading ? '位置情報取得中...' : '現在地から検索'}
+                    </Button>
+                  </Tooltip>
                   <Button
-                    variant="outlined"
-                    startIcon={<LocationOnIcon />}
-                    onClick={handleGetCurrentLocation}
+                    variant="contained"
+                    color="primary"
+                    startIcon={<SearchIcon />}
+                    onClick={handleSearch}
+                    disabled={isLoading || isFetching}
                   >
-                    現在地から検索
+                    検索
                   </Button>
-                </Tooltip>
-                <Button
-                  variant="contained"
-                  color="primary"
-                  startIcon={<SearchIcon />}
-                  onClick={handleSearch}
-                  disabled={isLoading || isFetching}
-                >
-                  検索
-                </Button>
+                </Box>
+                {locationError && (
+                  <Alert severity="error" onClose={() => setLocationError('')}>
+                    {locationError}
+                  </Alert>
+                )}
               </Box>
             </>
           ) : (
@@ -371,49 +651,19 @@ const RestaurantListPage: React.FC = () => {
           </Box>
         ) : viewMode === 'list' ? (
           <>
-            <Grid container spacing={3}>
-              {restaurants.slice((page - 1) * itemsPerPage, page * itemsPerPage).map((restaurant) => (
-                <Grid item xs={12} sm={6} md={4} key={restaurant.id}>
-                  <Card sx={{ height: '100%' }}>
-                    <CardActionArea onClick={() => handleRestaurantClick(restaurant.id)}>
-                      <CardMedia
-                        component="img"
-                        height="140"
-                        image={`https://source.unsplash.com/random/300x200/?restaurant,${restaurant.cuisine_types[0]?.name || 'food'}`}
-                        alt={restaurant.restaurant_name}
-                      />
-                      <CardContent>
-                        <Typography gutterBottom variant="h6" component="div" noWrap>
-                          {restaurant.restaurant_name}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary" gutterBottom>
-                          {restaurant.cuisine_types.map(c => c.name).join(', ')}
-                        </Typography>
-                        <Typography variant="body2" color="text.secondary" gutterBottom>
-                          {restaurant.address}
-                        </Typography>
-                        {restaurant.price_range_dinner && (
-                          <Typography variant="body2" color="text.secondary">
-                            <RestaurantIcon fontSize="small" sx={{ verticalAlign: 'middle', mr: 0.5 }} />
-                            {restaurant.price_range_dinner}
-                          </Typography>
-                        )}
-                        {restaurant.special_features.length > 0 && (
-                          <Box sx={{ mt: 1, display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                            {restaurant.special_features.slice(0, 2).map(feature => (
-                              <Chip key={feature.id} label={feature.name} size="small" />
-                            ))}
-                            {restaurant.special_features.length > 2 && (
-                              <Chip label={`+${restaurant.special_features.length - 2}`} size="small" />
-                            )}
-                          </Box>
-                        )}
-                      </CardContent>
-                    </CardActionArea>
-                  </Card>
-                </Grid>
-              ))}
-            </Grid>
+            <Box sx={{ height: 600, width: '100%' }}>
+              <FixedSizeGrid
+                columnCount={columnCount}
+                rowCount={rowCount}
+                width={window.innerWidth > 1200 ? 1200 - 48 : window.innerWidth - 48}
+                height={550}
+                columnWidth={window.innerWidth > 1200 ? (1200 - 48) / columnCount : (window.innerWidth - 48) / columnCount}
+                rowHeight={350}
+                itemData={restaurants.slice((page - 1) * itemsPerPage, page * itemsPerPage)}
+              >
+                {RestaurantCell}
+              </FixedSizeGrid>
+            </Box>
             
             <Box sx={{ display: 'flex', justifyContent: 'center', mt: 4 }}>
               <Pagination
